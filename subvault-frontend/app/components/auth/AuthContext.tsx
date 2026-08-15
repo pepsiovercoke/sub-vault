@@ -3,14 +3,40 @@
 import React, { createContext, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth as apiAuth } from '@/api-client';
+import { supabase } from '@/lib/supabase';
 
-export const AuthContext = createContext();
+interface AuthUser {
+  id?: string | number;
+  email?: string;
+  name?: string;
+  // Allow extra fields from backend without strict typing
+  [key: string]: unknown;
+}
 
-export function AuthProvider({ children }) {
+interface AuthContextType {
+  user: AuthUser | null;
+  isLoading: boolean;
+  error: string | null;
+  login: (email: string, password: string) => Promise<unknown>;
+  register: (email: string, password: string, name: string) => Promise<unknown>;
+  logout: () => void;
+  startOAuthFlow: (provider: string) => Promise<void>;
+  handleOAuthCallback: (provider: string, code: string) => Promise<unknown>;
+  updateProfile: (data: Partial<AuthUser>) => Promise<AuthUser>;
+  refreshAuth: () => Promise<void>;
+}
+
+export const AuthContext = createContext<AuthContextType | null>(null);
+
+type AuthProviderProps = {
+  children: React.ReactNode;
+};
+
+export function AuthProvider({ children }: AuthProviderProps) {
   const router = useRouter();
-  const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [user, setUser] = useState<AuthContextType['user']>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Initialize auth from localStorage
   useEffect(() => {
@@ -18,11 +44,13 @@ export function AuthProvider({ children }) {
       try {
         const token = localStorage.getItem('subvault_token');
         if (token) {
-          // Validate token with backend
+          // Validate token with backend and normalize shape
           const response = await apiAuth.me();
-          setUser(response);
+          const normalizedUser: AuthUser =
+            (response && (response.user as AuthUser)) || (response as AuthUser);
+          setUser(normalizedUser);
         }
-      } catch (err) {
+      } catch {
         // Token invalid or expired, clear it
         localStorage.removeItem('subvault_token');
         setUser(null);
@@ -34,16 +62,21 @@ export function AuthProvider({ children }) {
     initAuth();
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (email: string, password: string) => {
     setIsLoading(true);
     setError(null);
     try {
       const response = await apiAuth.login(email, password);
       localStorage.setItem('subvault_token', response.token);
-      setUser(response.user);
+      const normalizedUser: AuthUser =
+        (response && (response.user as AuthUser)) || (response as AuthUser);
+      setUser(normalizedUser);
       return response;
-    } catch (err: any) {
-      const errorMsg = err?.message || 'Login failed. Please check your credentials.';
+    } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Login failed. Please check your credentials.';
       setError(errorMsg);
       throw err;
     } finally {
@@ -51,16 +84,21 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const register = async (email, password, name) => {
+  const register = async (email: string, password: string, name: string) => {
     setIsLoading(true);
     setError(null);
     try {
       const response = await apiAuth.register(email, password, name);
       localStorage.setItem('subvault_token', response.token);
-      setUser(response.user);
+      const normalizedUser: AuthUser =
+        (response && (response.user as AuthUser)) || (response as AuthUser);
+      setUser(normalizedUser);
       return response;
-    } catch (err: any) {
-      const errorMsg = err?.message || 'Registration failed. Please try again.';
+    } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Registration failed. Please try again.';
       setError(errorMsg);
       throw err;
     } finally {
@@ -75,61 +113,59 @@ export function AuthProvider({ children }) {
     router.push('/auth/login');
   };
 
-  const startOAuthFlow = (provider) => {
-    // Determine the OAuth URL based on provider
-    let oauthUrl = '';
-    const redirectUri = `${window.location.origin}/auth/${provider}/callback`;
-    const state = Math.random().toString(36).substring(7);
-    localStorage.setItem(`oauth_state_${provider}`, state);
-
-    if (provider === 'google') {
-      const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-      oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        response_type: 'code',
-        scope: 'openid email profile',
-        state,
-      }).toString()}`;
-    } else if (provider === 'github') {
-      const clientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID;
-      oauthUrl = `https://github.com/login/oauth/authorize?${new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        scope: 'user:email',
-        state,
-      }).toString()}`;
-    }
-
-    if (oauthUrl) {
-      window.location.href = oauthUrl;
+  const refreshAuth = async () => {
+    try {
+      const token = localStorage.getItem('subvault_token');
+      if (token) {
+        const response = await apiAuth.me();
+        const normalizedUser: AuthUser =
+          (response && (response.user as AuthUser)) || (response as AuthUser);
+        setUser(normalizedUser);
+      }
+    } catch {
+      localStorage.removeItem('subvault_token');
+      setUser(null);
     }
   };
 
-  const handleOAuthCallback = async (provider, code, state) => {
+  const startOAuthFlow = async (provider: string) => {
+    if (provider === 'google') {
+      const redirectTo = `${window.location.origin}/auth/google/callback`;
+      await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+    }
+  };
+
+  const handleOAuthCallback = async (provider: string, code: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      // Verify state parameter
-      const savedState = localStorage.getItem(`oauth_state_${provider}`);
-      if (savedState !== state) {
-        throw new Error('State mismatch - possible CSRF attack');
-      }
+      const { data, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+      if (sessionError || !data.session) throw new Error('Failed to complete authentication');
 
-      const redirectUri = `${window.location.origin}/auth/${provider}/callback`;
-      const response = await apiAuth.oauthCallback(provider, code, redirectUri);
-
+      const response = await apiAuth.supabaseSync(data.session.access_token);
       localStorage.setItem('subvault_token', response.token);
-      setUser(response.user);
-      localStorage.removeItem(`oauth_state_${provider}`);
+      const normalizedUser: AuthUser =
+        (response && (response.user as AuthUser)) || (response as AuthUser);
+      setUser(normalizedUser);
       return response;
-    } catch (err: any) {
-      const errorMsg = err?.message || `${provider} authentication failed. Please try again.`;
+    } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : `${provider} authentication failed. Please try again.`;
       setError(errorMsg);
       throw err;
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const updateProfile = async (data: Partial<AuthUser>) => {
+    const response = await apiAuth.updateProfile(data);
+    const normalizedUser: AuthUser =
+      (response && (response.user as AuthUser)) || (response as AuthUser);
+    setUser(normalizedUser);
+    return normalizedUser;
   };
 
   const value = {
@@ -141,6 +177,8 @@ export function AuthProvider({ children }) {
     logout,
     startOAuthFlow,
     handleOAuthCallback,
+    updateProfile,
+    refreshAuth,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
