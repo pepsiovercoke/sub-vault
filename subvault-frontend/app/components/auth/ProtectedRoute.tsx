@@ -4,7 +4,7 @@ import { useAuth } from './useAuth';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
-export function ProtectedRoute({ children }) {
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
 

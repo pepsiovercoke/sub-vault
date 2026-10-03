@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from './useAuth';
 
+const mono: React.CSSProperties = { fontFamily: "'IBM Plex Mono', monospace" };
+
 export function LoginForm() {
   const router = useRouter();
   const { login, error: authError } = useAuth();
@@ -12,7 +14,7 @@ export function LoginForm() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
@@ -20,8 +22,11 @@ export function LoginForm() {
     try {
       await login(email, password);
       router.push('/dashboard');
-    } catch (err: any) {
-      const errorMsg = err?.message || 'Login failed. Please try again.';
+    } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Login failed. Please try again.';
       setError(errorMsg);
     } finally {
       setIsLoading(false);
@@ -29,39 +34,66 @@ export function LoginForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 24 }}>
       {(error || authError) && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+        <div
+          style={{
+            ...mono,
+            fontSize: 11,
+            color: '#c00',
+            padding: '12px 16px',
+            border: '1px solid #f5c6cb',
+            background: '#ffeaea',
+          }}
+        >
           {error || authError}
         </div>
       )}
 
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-gray-800">
+        <div
+          style={{
+            ...mono,
+            fontSize: 10,
+            letterSpacing: 2,
+            textTransform: 'uppercase',
+            color: '#444',
+            marginBottom: 4,
+          }}
+        >
           Email
-        </label>
+        </div>
         <input
           id="email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400 text-gray-900"
+          className="auth-input"
           placeholder="you@example.com"
         />
       </div>
 
       <div>
-        <label htmlFor="password" className="block text-sm font-medium text-gray-800">
+        <div
+          style={{
+            ...mono,
+            fontSize: 10,
+            letterSpacing: 2,
+            textTransform: 'uppercase',
+            color: '#444',
+            marginBottom: 4,
+          }}
+        >
           Password
-        </label>
+        </div>
         <input
           id="password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400 text-gray-900"
+          className="auth-input"
           placeholder="••••••••"
         />
       </div>
@@ -69,9 +101,10 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={isLoading}
-        className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition"
+        className="auth-btn auth-btn-filled"
+        style={{ width: '100%', padding: '14px 0', marginTop: 4 }}
       >
-        {isLoading ? 'Signing in...' : 'Sign in'}
+        <span>{isLoading ? 'Signing in…' : 'Sign in'}</span>
       </button>
     </form>
   );

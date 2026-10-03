@@ -66,14 +66,22 @@ export const auth = {
   updateProfile: (data) =>
     request("/auth/me", { method: "PUT", body: JSON.stringify(data) }),
 
-  oauthCallback: (provider, code, redirectUri) =>
-    request(`/oauth/${provider}/callback`, {
+  supabaseSync: (accessToken) =>
+    request("/auth/supabase-sync", {
       method: "POST",
-      body: JSON.stringify({ code, redirectUri }),
+      body: JSON.stringify({ accessToken }),
     }),
 
   getAuthMethods: (email) =>
     request(`/oauth/auth-methods/${email}`),
+
+  setPassword: (password, currentPassword) =>
+    request("/auth/set-password", {
+      method: "POST",
+      body: JSON.stringify({ password, currentPassword }),
+    }),
+
+  deleteAccount: () => request("/auth/me", { method: "DELETE" }),
 };
 
 // ─── Subscriptions ───
@@ -103,6 +111,21 @@ export const subscriptions = {
     request("/subscriptions/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) }),
 };
 
+// ─── Import ───
+export const imports = {
+  detect: (csvText, currency) =>
+    request("/import/detect", {
+      method: "POST",
+      body: JSON.stringify({ csvText, currency }),
+    }),
+
+  confirm: (subscriptions) =>
+    request("/import/confirm", {
+      method: "POST",
+      body: JSON.stringify({ subscriptions }),
+    }),
+};
+
 // ─── Analytics ───
 export const analytics = {
   summary: () => request("/analytics/summary"),
@@ -110,6 +133,18 @@ export const analytics = {
   trends: () => request("/analytics/trends"),
   upcoming: (limit = 10, days = 30) => request(`/analytics/upcoming?limit=${limit}&days=${days}`),
   insights: () => request("/analytics/insights"),
+};
+
+// ─── Gmail ───
+export const gmail = {
+  getAuthUrl: (redirectUri) =>
+    request(`/gmail/auth-url${redirectUri ? `?redirectUri=${encodeURIComponent(redirectUri)}` : ""}`),
+
+  scan: (code, redirectUri) =>
+    request("/gmail/scan", {
+      method: "POST",
+      body: JSON.stringify({ code, redirectUri }),
+    }),
 };
 
 // ─── Health ───
