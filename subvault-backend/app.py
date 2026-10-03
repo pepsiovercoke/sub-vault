@@ -15,6 +15,7 @@ import jwt as pyjwt
 from passlib.hash import bcrypt
 import httpx
 from supabase import create_client
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # ─── Config ───
 PORT = int(os.getenv("PORT", "3001"))
@@ -84,12 +85,35 @@ def get_current_user(request: Request):
 
 # ─── App ───
 app = FastAPI(title="SubVault API")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ─── Custom error handler to match JSON format ───
 @app.exception_handler(HTTPException)
 async def http_exc(request, exc):
     return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+
+# ─── Catch Supabase / network errors and return proper JSON (not a 500 with no CORS headers) ───
+@app.exception_handler(Exception)
+async def generic_exc(request, exc):
+    if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError)):
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Database unreachable. Please ensure the backend has network access and Supabase is reachable."},
+        )
+    # Re-raise other exceptions normally
+    raise exc
 
 # ─── Health ───
 @app.get("/api/health")
